@@ -2738,7 +2738,7 @@ grep -qF "user work in progress" "$P13/memory/index.md" \
 # ===========================================================================
 if [ -d "$HERE/site" ]; then
 echo "== Site claims: the published pages cannot outrun the code =="
-SITE_CHECKS=8
+SITE_CHECKS=10
 SITE_BEFORE=$((PASS + FAIL))
 SITE_TOTAL=$((SITE_BEFORE + SITE_CHECKS))
 PV="$(sed -n 's/^PROTO_VERSION="\([^"]*\)".*/\1/p' "$INSTALLER" | head -1)"
@@ -2818,6 +2818,23 @@ ZUV="$(unzip -p "$ZIP" INSTALL.txt 2>/dev/null | sed -n 's/^Version: *UMS *//p' 
 check "site: the zip's INSTALL.txt Version: line equals UMS_VERSION" "$UV" "$ZUV"
 ZPERS="$(unzip -p "$ZIP" install-memory-system.sh 2>/dev/null | grep -c 'PERSONAL-NAME-DROP' | tr -d ' ')"
 check "site: the zip carries the generalized copy (no personal name-drop)" "0" "$ZPERS"
+
+# GAPS #26 (closed 2026-08-21): everything above pins the zip's version STAMPS, not
+# its bytes - so a zip rebuilt before a same-protocol-date code change stayed green
+# while shipping stale content. It really happened: the download sat 64 lines behind
+# the installer (no writer-lock v3.2) and every check here passed. These two pin the
+# CONTENT, against the build record that `bash publish-public.sh --build-zip` writes.
+# Note what is NOT here: any copy of the de-personalization list. publish-public.sh
+# stays the only thing that knows those strings; this compares hashes it recorded.
+BREC="$HERE/site/downloads/BUILD.txt"
+SHA_FILE='import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())'
+SHA_STDIN='import hashlib,sys;print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
+SRC_NOW="$(/usr/bin/python3 -c "$SHA_FILE" "$INSTALLER" 2>/dev/null)"
+SRC_REC="$(sed -n 's/^source_sha=//p' "$BREC" 2>/dev/null | head -1)"
+check "site: the zip was built from the CURRENT installer (fix: publish-public.sh --build-zip)" "$SRC_NOW" "$SRC_REC"
+ZIP_NOW="$(unzip -p "$ZIP" install-memory-system.sh 2>/dev/null | /usr/bin/python3 -c "$SHA_STDIN" 2>/dev/null)"
+ZIP_REC="$(sed -n 's/^zip_installer_sha=//p' "$BREC" 2>/dev/null | head -1)"
+check "site: the zip's installer matches its build record (fix: publish-public.sh --build-zip)" "$ZIP_NOW" "$ZIP_REC"
 
 [ $((PASS + FAIL - SITE_BEFORE)) -eq "$SITE_CHECKS" ] || {
   printf '  \033[31mFAIL\033[0m site: SITE_CHECKS is stale (block ran %s, constant says %s) - the pinned total is wrong\n' \
