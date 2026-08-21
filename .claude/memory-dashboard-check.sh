@@ -193,6 +193,36 @@ if "rulebook" in first_line.lower():
 # expects x.date / x.what and shows literal "undefined" for every row otherwise.
 decisions = [{"date": dt, "what": truncate(strip_md(title))} for dt, title in dmatches[-6:]]
 
+# ---- sessions: recent entries from the working journal (opt-in, never validated) ----
+# Source is the memory/daily/ shelf plus daily.md - exactly the pages compaction merges
+# and clears - so this panel SHRINKS as the journal decays. That is honest: it is a view
+# of recent activity, not an archive (history.md holds the day summaries after that, in a
+# different shape, and is deliberately not read here). Heading shape is the protocol's:
+# "## [YYYY-MM-DD - session <id>] title". Anything that does not match is skipped, never
+# guessed at.
+SESSION_HEAD = re.compile(r'^##\s*\[\s*(\d{4}-\d{2}-\d{2})\s*-\s*session\s+([^\]]+?)\s*\]\s*(.*)$', re.M)
+jpaths = []
+_ddir = proj + "/memory/daily"
+if os.path.isdir(_ddir):
+    jpaths = [_ddir + "/" + fn for fn in sorted(os.listdir(_ddir))
+              if fn.endswith(".md") and fn != "README.md"]
+jpaths.append(proj + "/memory/daily.md")
+sessions, _seen = [], set()
+for jp in jpaths:
+    jtxt = read(jp)
+    if not jtxt: continue
+    for jdate, jsid, jtitle in SESSION_HEAD.findall(jtxt):
+        jtitle = strip_md(jtitle).strip()
+        key = (jdate, jsid, jtitle)
+        if key in _seen: continue
+        _seen.add(key)
+        sessions.append({"date": jdate, "session": jsid, "title": truncate(jtitle) or "(untitled entry)"})
+# newest first: reverse first so that WITHIN one date the later entry on the page leads,
+# then a stable sort by date descending keeps that order intact
+sessions.reverse()
+sessions.sort(key=lambda x: x["date"], reverse=True)
+sessions = sessions[:8]
+
 if understanding is None:
     print("dashboard-check: neither CURRENT.md nor the index.md Snapshot has a '- **What:**' line to derive understanding from"); sys.exit(1)
 
@@ -214,6 +244,9 @@ if missing_keys:
 if mode == "write":
     for k, v in expected.items():
         d[k] = v
+    # opt-in: present means the dashboard renders it, absent means leave the block alone
+    if "sessions" in d:
+        d["sessions"] = sessions
     d["lastUpdated"] = datetime.date.today().isoformat()
     # The JSON lands INSIDE a <script> element, so a literal "</" in any generated
     # value (e.g. a bullet mentioning a closing script tag) would end the block
@@ -228,8 +261,9 @@ if mode == "write":
     os.replace(tmp_p, status_p)
     counts = ", ".join("%s (%d)" % (k, len(v)) for k, v in expected.items() if isinstance(v, list))
     skipped = " (objectives skipped - CURRENT.md has no Now/Next section to derive from)" if objectives is None else ""
-    print("dashboard-check --write: OK - regenerated understanding, %s, and lastUpdated.%s "
-          "Roadmap and any custom key were left untouched." % (counts, skipped))
+    sess_note = (" sessions (%d) refreshed from the journal." % len(sessions)) if "sessions" in d else ""
+    print("dashboard-check --write: OK - regenerated understanding, %s, and lastUpdated.%s%s "
+          "Roadmap and any custom key were left untouched." % (counts, skipped, sess_note))
     sys.exit(0)
 
 # Validate mode: every generated panel must match its notebook source exactly

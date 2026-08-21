@@ -91,6 +91,18 @@ grep -q "single-writer" "$P1/.claude/skills/close-out/SKILL.md" \
 # claim is handed back at the end.
 grep -q "^0\. \*\*Single-writer check FIRST" "$P1/.claude/skills/close-out/SKILL.md" \
   && ok "fresh: close-out does the HEAD check at step 0, not step 8" || bad "fresh: close-out HEAD check is not step 0"
+# The artifacts rule (UMS 1.7, proposed from a fresh install 2026-08-21): a postmortem or
+# study written on the session's journal page sits on the one page compaction deletes. The
+# rule must reach every home that PROPAGATES - the protocol block (--upgrade-protocol), the
+# close-out skill and the hook (plain re-install) - plus the fresh-install README signpost.
+grep -q "^1b\. \*\*File the artifacts" "$P1/.claude/skills/close-out/SKILL.md" \
+  && ok "fresh: close-out step 1b files artifacts into knowledge/ (artifacts rule)" || bad "fresh: close-out lacks step 1b (artifacts rule)"
+grep -q "only home of a fact that cannot be re-derived" "$P1/CLAUDE.md" \
+  && ok "fresh: protocol block carries the artifacts invariant" || bad "fresh: protocol block lacks the artifacts invariant"
+grep -q "dead ends with why they failed" "$P1/memory/knowledge/research/README.md" \
+  && ok "fresh: research/ README widened to documents Claude produced (option a)" || bad "fresh: research/ README still research-only"
+grep -q "checked for an ARTIFACT first" "$P1/.claude/memory-catchup.sh" \
+  && ok "fresh: compaction checklist guards long shelf pages for artifacts" || bad "fresh: compaction checklist lacks the artifact guard"
 grep -q '.git commit -a., .git add -A., .git add .. or .git add <directory>/.' "$P1/.claude/skills/close-out/SKILL.md" \
   && ok "fresh: close-out forbids all four broad-staging forms (path-scoped rule)" || bad "fresh: close-out missing the path-scoped commit rule"
 grep -q "writer lock now \*\*blocks\*\*" "$P1/.claude/skills/close-out/SKILL.md" \
@@ -914,6 +926,22 @@ PY
 R="$(tj "$CUR" | bash "$CATCHUP")"
 hasnt "catchup: CURRENT.md filled -> interview never fires again" "FIRST SESSION" "$R"
 hasnt "catchup: introduced project is not asked for reference material" "reference material" "$R"
+
+echo "== catch-up hook: Job 2e - the artifacts-rule warning light (v20) =="
+# A shelf page over JOURNAL_PAGE_NUDGE_LINES is usually a DOCUMENT, not a log. The light
+# names the page and points at memory/knowledge/; a short page says nothing. Both branches
+# are exercised so the check cannot pass on a hook that always (or never) prints it.
+LONGPG="$P1/memory/daily/2026-01-02--longpage1.md"
+for i in $(seq 1 100); do echo "journal line $i"; done > "$LONGPG"
+R="$(tj "$CUR" | bash "$CATCHUP")"
+has "catchup: 100-line shelf page -> artifacts warning light" "journal page(s) over 80 lines" "$R"
+has "catchup: the light names the page" "2026-01-02--longpage1.md (100 lines)" "$R"
+has "catchup: the light points at memory/knowledge/" "file it in memory/knowledge/" "$R"
+has "catchup: the light keeps the journal pointer" "leave one line + a link on the journal page" "$R"
+for i in $(seq 1 20); do echo "journal line $i"; done > "$LONGPG"
+R="$(tj "$CUR" | bash "$CATCHUP")"
+hasnt "catchup: 20-line shelf page -> no artifacts light" "journal page(s) over 80 lines" "$R"
+rm -f "$LONGPG"
 
 echo "== catch-up hook: v9 - no staleness timer (Job 4 cut, protocol 2026-07-18) =="
 TOPICS="$P1/memory/knowledge/topics"
@@ -1929,7 +1957,7 @@ check "repair: an unrelated command is never touched" 'echo unrelated command' "
 # --- liveness: the always-printed session-id line stamps the hook version, and the
 # registration self-check is silent when healthy / speaks when broken (GAPS #22 shape) ---
 LIVE="$(tj "$CUR" | CLAUDE_PROJECT_DIR="$SP" bash "$SP/.claude/memory-catchup.sh")"
-has  "liveness: session-id line carries the hook version" "memory hooks v19 live" "$LIVE"
+has  "liveness: session-id line carries the hook version" "memory hooks v20 live" "$LIVE"
 hasnt "liveness: healthy registrations -> self-check silent" "registration problem" "$LIVE"
 cp "$SP/.claude/settings.json" "$SP/.claude/settings.json.baktest"
 /usr/bin/python3 - "$SP" <<'PYH'
@@ -2071,6 +2099,78 @@ R="$(bash "$CHECKER2" 2>&1)"; RC=$?
 grep -q "typeof x === 'string'" "$P2/project-status.html" \
   && ok "template: decisions renderer tolerates legacy flat strings (no 'undefined')" \
   || bad "template: decisions renderer lacks string/object tolerance"
+
+echo "== dashboard: the sessions panel (opt-in, generated, never validated) =="
+# A "recent sessions" panel needs data the notebook has but the dashboard cannot read for
+# itself, so --write derives it from the journal. Two properties are load-bearing, both
+# pinned here: it is OPT-IN (a dashboard without the key never grows one, so an older
+# template cannot sprout a panel it has no renderer for), and it is NEVER VALIDATED (a
+# project must not be REFUSED over a panel it does not render - the same reasoning that
+# leaves roadmap unchecked).
+NOSESS="$(python3 - "$P2/project-status.html" <<'PYA'
+import json, re, sys
+h = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r'<script id="status-data"[^>]*>(.*?)</script>', h, re.S)
+print("PRESENT" if "sessions" in json.loads(m.group(1)) else "ABSENT")
+PYA
+)"
+check "sessions: --write does NOT add the key to a dashboard without it (opt-in)" "ABSENT" "$NOSESS"
+
+# Opt in, plant two journal entries (one on the daily/ shelf, one in daily.md), regenerate.
+mkdir -p "$P2/memory/daily"
+cat > "$P2/memory/daily/2026-01-03--aaaa1111.md" <<'MJ'
+# Daily journal - session aaaa1111
+
+## [2026-01-03 - session aaaa1111] Shelf entry with a "quote" and a </script> tag
+Body text that must not become the title.
+MJ
+cat > "$P2/memory/daily.md" <<'MJ'
+# Daily journal
+
+## [2026-01-01 - session bbbb2222] Older merged entry
+Body.
+MJ
+python3 - "$P2/project-status.html" <<'PYB'
+import json, re, sys
+p = sys.argv[1]; h = open(p, encoding="utf-8").read()
+m = re.search(r'(<script id="status-data" type="application/json">\s*)(\{.*?\})(\s*</script>)', h, re.S)
+d = json.loads(m.group(2)); d["sessions"] = []          # opt in
+payload = json.dumps(d, indent=2, ensure_ascii=True).replace("</", "<\\/")
+open(p, "w", encoding="utf-8").write(h[:m.start()] + m.group(1) + payload + m.group(3) + h[m.end():])
+PYB
+R="$(bash "$CHECKER2" --write 2>&1)"; RC=$?
+[ "$RC" = "0" ] && ok "--write: regenerates cleanly once the sessions panel is opted into" || bad "--write: failed with sessions opted in (exit $RC: $R)"
+SESS="$(python3 - "$P2/project-status.html" <<'PYC'
+import json, re, sys
+h = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r'<script id="status-data"[^>]*>(.*?)</script>', h, re.S)
+sess = json.loads(m.group(1)).get("sessions")
+if not isinstance(sess, list) or len(sess) != 2:
+    print("FAIL shape: %r" % (sess,)); raise SystemExit
+a, b = sess
+good = (a.get("date") == "2026-01-03" and a.get("session") == "aaaa1111"
+        and b.get("date") == "2026-01-01" and b.get("session") == "bbbb2222"
+        and a.get("title", "").startswith("Shelf entry")
+        and "Body text" not in a.get("title", ""))
+print("OK" if good else "FAIL content: %r" % (sess,))
+PYC
+)"
+has "sessions: derived from the shelf AND daily.md, newest first, heading only" "OK" "$SESS"
+check "sessions: the generated block escapes '</' so the panel cannot end the script tag" "0" "$(grep -c '</script> tag"' "$P2/project-status.html" | tr -d ' ')"
+# Never validated: hand-break the panel and the checker must still pass.
+python3 - "$P2/project-status.html" <<'PYD'
+import json, re, sys
+p = sys.argv[1]; h = open(p, encoding="utf-8").read()
+m = re.search(r'(<script id="status-data" type="application/json">\s*)(\{.*?\})(\s*</script>)', h, re.S)
+d = json.loads(m.group(2))
+d["sessions"] = [{"date": "1999-01-01", "session": "zzzz", "title": "drifted"}]
+payload = json.dumps(d, indent=2, ensure_ascii=True).replace("</", "<\\/")
+open(p, "w", encoding="utf-8").write(h[:m.start()] + m.group(1) + payload + m.group(3) + h[m.end():])
+PYD
+R="$(bash "$CHECKER2" 2>&1)"; RC=$?
+[ "$RC" = "0" ] && ok "sessions: a drifted sessions panel does NOT refuse the validator (unchecked, like roadmap)" \
+                || bad "sessions: validator refused over the unvalidated sessions panel (exit $RC: $R)"
+rm -f "$P2/memory/daily/2026-01-03--aaaa1111.md"
 
 # FINDING 1 fix (critical): a decisions.md using a nonstandard heading style (e.g.
 # "### 2026-07-01 -- title" instead of "## [YYYY-MM-DD] title") used to yield ZERO

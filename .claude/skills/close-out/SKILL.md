@@ -20,6 +20,13 @@ asking; ask first only before overwriting a hand-maintained doc, regenerating an
    merged journal and compaction owns it). Capture what we did, decisions, problems,
    blockers. Prefix what mattered most with **KEY**. Log failed approaches and why they
    failed - an unwritten dead end gets re-attempted next session.
+1b. **File the artifacts.** Did this session produce a document whose value is its reasoning -
+   a postmortem, a study with its numbers, a benchmark, a comparison, a root-cause analysis,
+   or a dead end and why it failed? It belongs in `memory/knowledge/` (Claude's own ->
+   `research/YYYY-MM-DD-topic.md`; something the user brought -> `reference/`), distilled into
+   a topic page and listed in `memory/index.md` - NOT on your journal page, which compaction
+   will merge and delete. Leave one line and a link behind on the journal page. Drafting it
+   there first was fine; moving it now is the rule.
 2. **Log decisions - TWO writes each.** Every real decision from this session gets (a) its FULL
    dated entry (what + why) appended to the current month's `memory/decisions-archive-YYYY-MM.md`
    (create it and list it in `index.md` if new), and (b) a 2-3 line rule in `memory/decisions.md`

@@ -1,5 +1,13 @@
 #!/bin/bash
 # Start-of-session memory catch-up (SessionStart hook). v19. PORTABLE / self-locating.
+# v20: the ARTIFACTS RULE gets a warning light (Job 2e) and a guard in the compaction
+#      checklist (Job 2). The journal lane decays by design - right for a record of activity,
+#      destructive for a document whose value IS its content (a postmortem, a study with its
+#      numbers, a dead end and why). The natural place to write one is the session's own
+#      shelf page, which is exactly the page compaction merges and deletes. Job 2e names any
+#      shelf page over JOURNAL_PAGE_NUDGE_LINES and points at memory/knowledge/; the Job 2
+#      checklist tells the compactor to check a long page for an artifact BEFORE deleting it.
+#      Nudges only, fail-open, never a block. (Proposed from a fresh install, 2026-08-21.)
 # v19: Job 0 is a two-question WELCOME INTERVIEW again (what is this project / any reference
 #      material to file), reversing v10. v10's reasoning - "hooks are warning lights, not
 #      instructors" - held for every nudge that fires at an EXPERIENCED user mid-project,
@@ -88,7 +96,8 @@ DECISIONS_NUDGE_LINES=250  # decisions.md is the live rulebook - past this, trim
 # purpose (see repo CLAUDE.md), so the number can't be interpolated - if this constant
 # ever changes, hand-edit that sentence in the SKILL heredoc to match.
 PROTOBLOCK_NUDGE_LINES=150 # the CLAUDE.md protocol block rides into EVERY session - past this, diet it (a new rule displaces an old one)
-HOOK_VERSION=v19           # stamped into the session-id line so a session can SEE its hooks ran (GAPS #22 was invisible for weeks precisely because a dead hook says nothing)
+HOOK_VERSION=v20           # stamped into the session-id line so a session can SEE its hooks ran (GAPS #22 was invisible for weeks precisely because a dead hook says nothing)
+JOURNAL_PAGE_NUDGE_LINES=80 # a memory/daily/ shelf page: past this it is usually a DOCUMENT (postmortem, study), not a log - file it in knowledge/ before compaction merges and deletes the page (the artifacts rule)
 TOPIC_STALE_DAYS=90        # knowledge/topics/ pages: days since _Verified:_ (else _Distilled_) before the staleness pass is due; a page's own _Review: Nd_ line overrides
 
 fsize () { stat -f%z "$1" 2>/dev/null || stat -c%s "$1" 2>/dev/null || echo 0; }
@@ -289,7 +298,7 @@ if [ -f "$DAILY" ]; then
       done
     fi
     [ -n "$live_note" ] && live_note=" LIVE RIGHT NOW - do NOT merge these shelf pages, name them and leave them for their own session to journal:${live_note}."
-    echo "MEMORY MAINTENANCE ($NAME): the journal (memory/daily.md + the memory/daily/ shelf) is $dlines lines and compaction is due ($due). Run the compaction checklist now - routine housekeeping, no need to ask permission - and if subagents are available, hand the checklist to one on a cheaper model (Sonnet) so the main session stays focused: Orient (read index.md + CURRENT.md + daily.md + every page on the memory/daily/ shelf), Merge (fold the shelf pages into daily.md in time order, keeping each entry's session id, then delete the merged shelf pages - a page whose session is still live stays), Gather (skim for durable items, any KEY-flagged lines, and any DECISION:/ISSUE: line a blocked session parked on its own page), Consolidate (file each durable item into its real home - decisions/lessons/open-threads/topics - confirming it still holds before you move it; refresh CURRENT.md), Prune & re-index (append a day summary to history.md - MAX 10 lines per day - then CLEAR daily.md back to its header). Clear without asking: durable content is already filed and git preserves every cleared line, so it is safe and recoverable. Single-writer check: the repo is at commit $chead as this fires - re-check HEAD right before the Prune step, and if it has moved, another session is live: stop the clear and say so.$live_note"
+    echo "MEMORY MAINTENANCE ($NAME): the journal (memory/daily.md + the memory/daily/ shelf) is $dlines lines and compaction is due ($due). Run the compaction checklist now - routine housekeeping, no need to ask permission - and if subagents are available, hand the checklist to one on a cheaper model (Sonnet) so the main session stays focused: Orient (read index.md + CURRENT.md + daily.md + every page on the memory/daily/ shelf), Merge (fold the shelf pages into daily.md in time order, keeping each entry's session id, then delete the merged shelf pages - a page whose session is still live stays; and a page over $JOURNAL_PAGE_NUDGE_LINES lines gets checked for an ARTIFACT first - a postmortem, study, benchmark, root-cause analysis, or dead end and why - which is filed in memory/knowledge/ with one line + a link left behind BEFORE the page is deleted: compaction must never be the step that destroys the only copy), Gather (skim for durable items, any KEY-flagged lines, and any DECISION:/ISSUE: line a blocked session parked on its own page), Consolidate (file each durable item into its real home - decisions/lessons/open-threads/topics - confirming it still holds before you move it; refresh CURRENT.md), Prune & re-index (append a day summary to history.md - MAX 10 lines per day - then CLEAR daily.md back to its header). Clear without asking: durable content is already filed and git preserves every cleared line, so it is safe and recoverable. Single-writer check: the repo is at commit $chead as this fires - re-check HEAD right before the Prune step, and if it has moved, another session is live: stop the clear and say so.$live_note"
   fi
 fi
 
@@ -339,6 +348,25 @@ PYCAP
   [ -n "$blines" ] || blines=0
   if [ "$blines" -gt "$PROTOBLOCK_NUDGE_LINES" ]; then
     echo "MEMORY MAINTENANCE ($NAME): the CLAUDE.md memory-protocol block is $blines lines (over $PROTOBLOCK_NUDGE_LINES) - it rides into EVERY session, so keep it lean. Diet it: tighten prose, move situational detail into hook messages or topic pages, and let a new rule displace an old one. (Project-custom regions count too - keep them tight.)"
+  fi
+fi
+
+# Job 2e (v20): the artifacts-rule warning light. A shelf page past the cap is usually a
+# DOCUMENT written where it was natural to write it - a postmortem, a study with its numbers,
+# a dead end and why - on the one page compaction will merge and delete. Measured condition,
+# one nudge, fail-open (an unreadable page is skipped; a long page that is just a long day
+# needs nothing). The rule it points at lives in the protocol block.
+if [ -d "$SHELF" ]; then
+  longpages=""
+  for f in "$SHELF"/*.md; do
+    [ -e "$f" ] || continue
+    case "$(basename "$f")" in README.md) continue;; esac
+    pl=$(wc -l < "$f" 2>/dev/null | tr -d ' ')
+    [ -n "$pl" ] || continue
+    [ "$pl" -gt "$JOURNAL_PAGE_NUDGE_LINES" ] && longpages="$longpages memory/daily/$(basename "$f") ($pl lines),"
+  done
+  if [ -n "$longpages" ]; then
+    echo "MEMORY MAINTENANCE ($NAME): journal page(s) over $JOURNAL_PAGE_NUDGE_LINES lines -${longpages%,}. That length is usually a DOCUMENT, not a log. If there is a postmortem, study, benchmark, root-cause analysis, or a dead end and why it failed in there, file it in memory/knowledge/ (Claude's own -> research/YYYY-MM-DD-topic.md; something the user brought -> reference/), distill a topic page, list it in index.md, and leave one line + a link on the journal page - BEFORE compaction merges and deletes that page. A long page that is just a long day needs nothing."
   fi
 fi
 

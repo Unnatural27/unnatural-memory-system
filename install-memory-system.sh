@@ -25,11 +25,11 @@
 # ============================================================================
 set -u
 
-UMS_VERSION="1.6"           # the human-facing release number. Bump the SECOND
+UMS_VERSION="1.7"           # the human-facing release number. Bump the SECOND
                             # number (1.1, 1.2, ...) each release; bump the
                             # FIRST number only when upgrading needs the user
                             # to read something before upgrading (manual action).
-PROTO_VERSION="2026-08-14"  # bump when the memory-protocol prose below changes
+PROTO_VERSION="2026-08-21"  # bump when the memory-protocol prose below changes
 
 # ---- --version: print + exit before anything else touches args or disk -----
 for a in "$@"; do
@@ -281,6 +281,14 @@ write_owned () {
 write_hook "$TARGET/.claude/memory-catchup.sh" <<'HOOK'
 #!/bin/bash
 # Start-of-session memory catch-up (SessionStart hook). v19. PORTABLE / self-locating.
+# v20: the ARTIFACTS RULE gets a warning light (Job 2e) and a guard in the compaction
+#      checklist (Job 2). The journal lane decays by design - right for a record of activity,
+#      destructive for a document whose value IS its content (a postmortem, a study with its
+#      numbers, a dead end and why). The natural place to write one is the session's own
+#      shelf page, which is exactly the page compaction merges and deletes. Job 2e names any
+#      shelf page over JOURNAL_PAGE_NUDGE_LINES and points at memory/knowledge/; the Job 2
+#      checklist tells the compactor to check a long page for an artifact BEFORE deleting it.
+#      Nudges only, fail-open, never a block. (Proposed from a fresh install, 2026-08-21.)
 # v19: Job 0 is a two-question WELCOME INTERVIEW again (what is this project / any reference
 #      material to file), reversing v10. v10's reasoning - "hooks are warning lights, not
 #      instructors" - held for every nudge that fires at an EXPERIENCED user mid-project,
@@ -369,7 +377,8 @@ DECISIONS_NUDGE_LINES=250  # decisions.md is the live rulebook - past this, trim
 # purpose (see repo CLAUDE.md), so the number can't be interpolated - if this constant
 # ever changes, hand-edit that sentence in the SKILL heredoc to match.
 PROTOBLOCK_NUDGE_LINES=150 # the CLAUDE.md protocol block rides into EVERY session - past this, diet it (a new rule displaces an old one)
-HOOK_VERSION=v19           # stamped into the session-id line so a session can SEE its hooks ran (GAPS #22 was invisible for weeks precisely because a dead hook says nothing)
+HOOK_VERSION=v20           # stamped into the session-id line so a session can SEE its hooks ran (GAPS #22 was invisible for weeks precisely because a dead hook says nothing)
+JOURNAL_PAGE_NUDGE_LINES=80 # a memory/daily/ shelf page: past this it is usually a DOCUMENT (postmortem, study), not a log - file it in knowledge/ before compaction merges and deletes the page (the artifacts rule)
 TOPIC_STALE_DAYS=90        # knowledge/topics/ pages: days since _Verified:_ (else _Distilled_) before the staleness pass is due; a page's own _Review: Nd_ line overrides
 
 fsize () { stat -f%z "$1" 2>/dev/null || stat -c%s "$1" 2>/dev/null || echo 0; }
@@ -570,7 +579,7 @@ if [ -f "$DAILY" ]; then
       done
     fi
     [ -n "$live_note" ] && live_note=" LIVE RIGHT NOW - do NOT merge these shelf pages, name them and leave them for their own session to journal:${live_note}."
-    echo "MEMORY MAINTENANCE ($NAME): the journal (memory/daily.md + the memory/daily/ shelf) is $dlines lines and compaction is due ($due). Run the compaction checklist now - routine housekeeping, no need to ask permission - and if subagents are available, hand the checklist to one on a cheaper model (Sonnet) so the main session stays focused: Orient (read index.md + CURRENT.md + daily.md + every page on the memory/daily/ shelf), Merge (fold the shelf pages into daily.md in time order, keeping each entry's session id, then delete the merged shelf pages - a page whose session is still live stays), Gather (skim for durable items, any KEY-flagged lines, and any DECISION:/ISSUE: line a blocked session parked on its own page), Consolidate (file each durable item into its real home - decisions/lessons/open-threads/topics - confirming it still holds before you move it; refresh CURRENT.md), Prune & re-index (append a day summary to history.md - MAX 10 lines per day - then CLEAR daily.md back to its header). Clear without asking: durable content is already filed and git preserves every cleared line, so it is safe and recoverable. Single-writer check: the repo is at commit $chead as this fires - re-check HEAD right before the Prune step, and if it has moved, another session is live: stop the clear and say so.$live_note"
+    echo "MEMORY MAINTENANCE ($NAME): the journal (memory/daily.md + the memory/daily/ shelf) is $dlines lines and compaction is due ($due). Run the compaction checklist now - routine housekeeping, no need to ask permission - and if subagents are available, hand the checklist to one on a cheaper model (Sonnet) so the main session stays focused: Orient (read index.md + CURRENT.md + daily.md + every page on the memory/daily/ shelf), Merge (fold the shelf pages into daily.md in time order, keeping each entry's session id, then delete the merged shelf pages - a page whose session is still live stays; and a page over $JOURNAL_PAGE_NUDGE_LINES lines gets checked for an ARTIFACT first - a postmortem, study, benchmark, root-cause analysis, or dead end and why - which is filed in memory/knowledge/ with one line + a link left behind BEFORE the page is deleted: compaction must never be the step that destroys the only copy), Gather (skim for durable items, any KEY-flagged lines, and any DECISION:/ISSUE: line a blocked session parked on its own page), Consolidate (file each durable item into its real home - decisions/lessons/open-threads/topics - confirming it still holds before you move it; refresh CURRENT.md), Prune & re-index (append a day summary to history.md - MAX 10 lines per day - then CLEAR daily.md back to its header). Clear without asking: durable content is already filed and git preserves every cleared line, so it is safe and recoverable. Single-writer check: the repo is at commit $chead as this fires - re-check HEAD right before the Prune step, and if it has moved, another session is live: stop the clear and say so.$live_note"
   fi
 fi
 
@@ -620,6 +629,25 @@ PYCAP
   [ -n "$blines" ] || blines=0
   if [ "$blines" -gt "$PROTOBLOCK_NUDGE_LINES" ]; then
     echo "MEMORY MAINTENANCE ($NAME): the CLAUDE.md memory-protocol block is $blines lines (over $PROTOBLOCK_NUDGE_LINES) - it rides into EVERY session, so keep it lean. Diet it: tighten prose, move situational detail into hook messages or topic pages, and let a new rule displace an old one. (Project-custom regions count too - keep them tight.)"
+  fi
+fi
+
+# Job 2e (v20): the artifacts-rule warning light. A shelf page past the cap is usually a
+# DOCUMENT written where it was natural to write it - a postmortem, a study with its numbers,
+# a dead end and why - on the one page compaction will merge and delete. Measured condition,
+# one nudge, fail-open (an unreadable page is skipped; a long page that is just a long day
+# needs nothing). The rule it points at lives in the protocol block.
+if [ -d "$SHELF" ]; then
+  longpages=""
+  for f in "$SHELF"/*.md; do
+    [ -e "$f" ] || continue
+    case "$(basename "$f")" in README.md) continue;; esac
+    pl=$(wc -l < "$f" 2>/dev/null | tr -d ' ')
+    [ -n "$pl" ] || continue
+    [ "$pl" -gt "$JOURNAL_PAGE_NUDGE_LINES" ] && longpages="$longpages memory/daily/$(basename "$f") ($pl lines),"
+  done
+  if [ -n "$longpages" ]; then
+    echo "MEMORY MAINTENANCE ($NAME): journal page(s) over $JOURNAL_PAGE_NUDGE_LINES lines -${longpages%,}. That length is usually a DOCUMENT, not a log. If there is a postmortem, study, benchmark, root-cause analysis, or a dead end and why it failed in there, file it in memory/knowledge/ (Claude's own -> research/YYYY-MM-DD-topic.md; something the user brought -> reference/), distill a topic page, list it in index.md, and leave one line + a link on the journal page - BEFORE compaction merges and deletes that page. A long page that is just a long day needs nothing."
   fi
 fi
 
@@ -883,6 +911,11 @@ echo "  [ok] .claude/memory-commit-sync.sh (portable)"
 #     other byte of project-status.html, and every key it does not own
 #     (name/phase/tagline/roadmap/any custom key), is preserved verbatim.
 #     Roadmap is never generated - it mirrors the project plan by hand.
+#     SESSIONS is OPT-IN and generated-but-never-validated: --write fills a
+#     "sessions" key (recent journal entries, newest first) ONLY if the block
+#     already has one, so a dashboard that does not render the panel never
+#     grows a key it cannot show, and no project is ever REFUSED over a panel
+#     it does not have (the same reasoning that leaves roadmap unchecked).
 #     CUSTOMIZED-DASHBOARD SAFETY: if the status-data block is missing,
 #     unparseable, or missing one of the keys above (a hand-customized
 #     dashboard with its own parser), --write refuses and changes NOTHING -
@@ -1088,6 +1121,36 @@ if "rulebook" in first_line.lower():
 # expects x.date / x.what and shows literal "undefined" for every row otherwise.
 decisions = [{"date": dt, "what": truncate(strip_md(title))} for dt, title in dmatches[-6:]]
 
+# ---- sessions: recent entries from the working journal (opt-in, never validated) ----
+# Source is the memory/daily/ shelf plus daily.md - exactly the pages compaction merges
+# and clears - so this panel SHRINKS as the journal decays. That is honest: it is a view
+# of recent activity, not an archive (history.md holds the day summaries after that, in a
+# different shape, and is deliberately not read here). Heading shape is the protocol's:
+# "## [YYYY-MM-DD - session <id>] title". Anything that does not match is skipped, never
+# guessed at.
+SESSION_HEAD = re.compile(r'^##\s*\[\s*(\d{4}-\d{2}-\d{2})\s*-\s*session\s+([^\]]+?)\s*\]\s*(.*)$', re.M)
+jpaths = []
+_ddir = proj + "/memory/daily"
+if os.path.isdir(_ddir):
+    jpaths = [_ddir + "/" + fn for fn in sorted(os.listdir(_ddir))
+              if fn.endswith(".md") and fn != "README.md"]
+jpaths.append(proj + "/memory/daily.md")
+sessions, _seen = [], set()
+for jp in jpaths:
+    jtxt = read(jp)
+    if not jtxt: continue
+    for jdate, jsid, jtitle in SESSION_HEAD.findall(jtxt):
+        jtitle = strip_md(jtitle).strip()
+        key = (jdate, jsid, jtitle)
+        if key in _seen: continue
+        _seen.add(key)
+        sessions.append({"date": jdate, "session": jsid, "title": truncate(jtitle) or "(untitled entry)"})
+# newest first: reverse first so that WITHIN one date the later entry on the page leads,
+# then a stable sort by date descending keeps that order intact
+sessions.reverse()
+sessions.sort(key=lambda x: x["date"], reverse=True)
+sessions = sessions[:8]
+
 if understanding is None:
     print("dashboard-check: neither CURRENT.md nor the index.md Snapshot has a '- **What:**' line to derive understanding from"); sys.exit(1)
 
@@ -1109,6 +1172,9 @@ if missing_keys:
 if mode == "write":
     for k, v in expected.items():
         d[k] = v
+    # opt-in: present means the dashboard renders it, absent means leave the block alone
+    if "sessions" in d:
+        d["sessions"] = sessions
     d["lastUpdated"] = datetime.date.today().isoformat()
     # The JSON lands INSIDE a <script> element, so a literal "</" in any generated
     # value (e.g. a bullet mentioning a closing script tag) would end the block
@@ -1123,8 +1189,9 @@ if mode == "write":
     os.replace(tmp_p, status_p)
     counts = ", ".join("%s (%d)" % (k, len(v)) for k, v in expected.items() if isinstance(v, list))
     skipped = " (objectives skipped - CURRENT.md has no Now/Next section to derive from)" if objectives is None else ""
-    print("dashboard-check --write: OK - regenerated understanding, %s, and lastUpdated.%s "
-          "Roadmap and any custom key were left untouched." % (counts, skipped))
+    sess_note = (" sessions (%d) refreshed from the journal." % len(sessions)) if "sessions" in d else ""
+    print("dashboard-check --write: OK - regenerated understanding, %s, and lastUpdated.%s%s "
+          "Roadmap and any custom key were left untouched." % (counts, skipped, sess_note))
     sys.exit(0)
 
 # Validate mode: every generated panel must match its notebook source exactly
@@ -2249,6 +2316,13 @@ asking; ask first only before overwriting a hand-maintained doc, regenerating an
    merged journal and compaction owns it). Capture what we did, decisions, problems,
    blockers. Prefix what mattered most with **KEY**. Log failed approaches and why they
    failed - an unwritten dead end gets re-attempted next session.
+1b. **File the artifacts.** Did this session produce a document whose value is its reasoning -
+   a postmortem, a study with its numbers, a benchmark, a comparison, a root-cause analysis,
+   or a dead end and why it failed? It belongs in `memory/knowledge/` (Claude's own ->
+   `research/YYYY-MM-DD-topic.md`; something the user brought -> `reference/`), distilled into
+   a topic page and listed in `memory/index.md` - NOT on your journal page, which compaction
+   will merge and delete. Leave one line and a link behind on the journal page. Drafting it
+   there first was fine; moving it now is the rule.
 2. **Log decisions - TWO writes each.** Every real decision from this session gets (a) its FULL
    dated entry (what + why) appended to the current month's `memory/decisions-archive-YYYY-MM.md`
    (create it and list it in `index.md` if new), and (b) a 2-3 line rule in `memory/decisions.md`
@@ -2540,12 +2614,22 @@ Two shelves of raw material, and one shelf of distilled pages. Everything here i
 - **\`reference/\`** - documents **you** bring: drop PDFs, guides, or notes in, then tell Claude
   "add these to the knowledge base" (a start-of-session check also offers to). Claude converts each
   to Markdown, keeps the raw copy here, and distills a topic page.
-- **\`research/\`** - reports **Claude** generates: when you ask it to "research X", the full
-  findings (with sources, dated) are filed here as \`YYYY-MM-DD-topic.md\`, never edited later.
+- **\`research/\`** - documents **Claude** produces: research reports when you ask it to "research
+  X", and equally postmortems, studies with their numbers, benchmarks, root-cause analyses, and
+  dead ends with why they failed - filed here dated as \`YYYY-MM-DD-topic.md\`, never edited later.
 - **\`topics/\`** - the **distilled** pages: durable takeaways from either shelf, each one citing
   where it came from, kept current, and listed in \`../index.md\`. These are what future work consults.
 
-**Which shelf?** \`reference/\` = you brought it; \`research/\` = Claude made it. Both feed \`topics/\`.
+**Which shelf?** \`reference/\` = you brought it; \`research/\` = Claude made it. The split is by
+provenance, so a reader knows how much to trust a source and what to verify it against. Both feed
+\`topics/\`. The raw shelves are dated records of a moment - they never go stale; only topic pages,
+which make claims about the present, carry a Verified stamp.
+
+**Not the journal.** The journal lane decays on purpose (the daily shelf is merged and deleted,
+history keeps a few lines a day). That is right for a record of activity and destructive for a
+document whose value IS its content. If it could not be re-derived from the code and commits - a
+postmortem, a study, a dead end and why - it belongs on a shelf here, with one line and a link left
+on the journal page.
 
 **Project vs. global:** this shelf is for docs that matter to **this project only**. Knowledge about
 how you build **everywhere** belongs in your own global notes (your \`~/.claude/CLAUDE.md\`,
@@ -2565,12 +2649,19 @@ the raw copy here, distills a topic page into \`../topics/\` that cites this sou
 EOF
 
 write_if_absent "$TARGET/memory/knowledge/research/README.md" <<EOF
-# research/ - Claude's own research
+# research/ - documents Claude produced
 
-When you ask Claude to "research X", it files the full findings here as
-\`YYYY-MM-DD-topic.md\` - with sources and links, dated. This is the **raw layer**: append-only,
-never edited after filing. The durable takeaways get distilled into a topic page in \`../topics/\`.
-Empty until you ask for research.
+Everything Claude *writes* that is worth keeping as a document lands here, dated, as
+\`YYYY-MM-DD-topic.md\`: research reports when you ask "research X", and equally **postmortems,
+studies and experiments with their numbers, benchmarks, root-cause analyses, comparisons, and
+dead ends with why they failed**. This is the **raw layer**: append-only, never edited after
+filing, and never "stale" - each file is a dated record of a moment. The durable takeaways get
+distilled into a topic page in \`../topics/\` (which *does* carry a Verified stamp).
+\`../reference/\` is the same idea for documents **you** bring - the split is by provenance, so a
+reader knows how much to trust a source and what to verify it against.
+
+Not the journal: a postmortem written on a session's journal page is on the one page compaction
+merges and deletes. File it here; the journal keeps one line and a link. Empty until the first one.
 EOF
 
 write_if_absent "$TARGET/memory/knowledge/topics/README.md" <<EOF
@@ -2747,6 +2838,12 @@ write_owned "$TARGET/pages/user-guide.html" <<'GUIDE'
   </ul>
   <p>You can also say <i>"research X"</i> - Claude saves the full findings (dated, with
   sources) and distills the takeaways into a topic page it will actually reuse.</p>
+  <p><b>Write-ups live on the shelf, not in the journal.</b> When a session produces something
+  whose value is the write-up itself - a postmortem, a study with its numbers, a comparison, a
+  dead end and why it failed - Claude files it in <code>memory/knowledge/</code> and leaves one
+  line and a link in the journal. The journal is meant to shrink over time (that is how it stays
+  readable); a document should not. A start-of-session check points out a journal page that has
+  grown long enough to be a document in disguise.</p>
 
   <h2><span class="num">4</span>Work normally - the memory rides along</h2>
   <p>During a session you don't have to do anything. Decisions get logged with their why,
@@ -3100,10 +3197,16 @@ batches - the same decay covers `history.md` (**history compaction** due: old mo
 a 3-4 line summary each; the full detail survives in git), `index.md`, `decisions.md`, and this
 protocol block itself; the hook names which is due.
 
-**Knowledge base.** Research: build on any existing topic page (check `index.md`); full dated
-findings go to `memory/knowledge/research/YYYY-MM-DD-topic.md` (raw, append-only), the durable
-takeaways into a topic page in `memory/knowledge/topics/`, listed in index.md. A dropped document:
-convert to Markdown, keep the raw copy in `memory/knowledge/reference/`, distill a topic page
+**Knowledge base - and the artifacts rule.** `memory/knowledge/research/YYYY-MM-DD-topic.md` (raw,
+append-only) holds every document Claude PRODUCES worth keeping: a research report (build on any
+existing topic page), and equally a postmortem, a study with its numbers, a benchmark, a root-cause
+analysis, a dead end and why it failed; durable takeaways go into a topic page in
+`memory/knowledge/topics/`, listed in index.md. **Not the journal:** it decays by design - right for a
+record of activity, destructive for a document whose value IS its content. The test is re-derivability:
+a day summary can be rebuilt from the commits; an investigation cannot. File it the day it is produced;
+the journal keeps one line and a link (draft there if you like; file before compaction). **Invariant: a
+decaying page is never the only home of a fact that cannot be re-derived.** A dropped document: convert
+to Markdown, keep the raw copy in `memory/knowledge/reference/`, distill a topic page
 citing it, list it, then `touch memory/knowledge/reference/.processed`. **Topic pages decay.** Each carries
 `_Verified: YYYY-MM-DD - still true against: <what was re-checked>_` under its `_Distilled_` line
 (no Verified line -> the Distilled date counts; the Distilled line itself never changes - it is

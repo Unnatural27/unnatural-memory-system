@@ -78,7 +78,7 @@ bash test-installer.sh
 ```
 
 This is the real test harness the installer ships with - it builds throwaway test projects, installs
-into them, and checks the result. As of this release it runs **576 checks** (that number is
+into them, and checks the result. As of this release it runs **590 checks** (that number is
 this repo's own `bash test-installer.sh` output, read fresh, not a guess) and all of them must pass
 before any change ships.
 
@@ -120,4 +120,4 @@ harmless and self-expires. Re-installing later picks the notebook up where it le
 
 MIT - see [LICENSE](LICENSE). Copyright (c) 2026 Unnatural Projects.
 
-Version: UMS 1.6, protocol 2026-08-14.
+Version: UMS 1.7, protocol 2026-08-21.
